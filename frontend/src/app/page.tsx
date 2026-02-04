@@ -146,13 +146,19 @@ export default function Home() {
     checkWails();
 
     // Listen for Wails file drop event
+    // Listen for Wails file drop event
     const runtime = getWailsEvents();
     if (runtime) {
+      console.log("Wails runtime found, binding files-dropped event");
       runtime.EventsOn("files-dropped", (paths: string[]) => {
+        console.log("Event: files-dropped received", paths);
+        alert("Debug: Files Dropped -> " + JSON.stringify(paths));
         if (paths && paths.length > 0) {
           addFiles(paths);
         }
       });
+    } else {
+      console.error("Wails runtime NOT found during mount");
     }
 
     // Cleanup? Wails events usually persist, but component mount/unmount ideally should clean up.
