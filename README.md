@@ -167,7 +167,16 @@ wails build -platform darwin/universal -ldflags "-X main.Version=1.0.1"
 4.  **更新 JSON**：修改服务器上的 `latest.json`，将 `version` 改为 `1.0.1` 并更新下载链接。
 5.  **完成**：用户重启应用或点击“检查更新”时，即可检测到新版本。
 
+### 6. 一键构建脚本 (推荐)
 
+为了简化上述版本号注入、打包和重命名流程，项目提供了一个自动化脚本。它会自动完成 Windows 和 macOS 的构建，并生成准备好上传的 zip 包。
+
+```bash
+# 格式: ./scripts/build_release.sh [版本号]
+./scripts/build_release.sh v0.0.3
+```
+
+脚本运行完成后，请打开 `dist/` 目录查看编译产物。 
 ## 📝 常见问题
 
 **Q: 拖拽在 Windows 上没反应？**
