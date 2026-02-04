@@ -66,6 +66,7 @@ export default function Home() {
   const [updateInfo, setUpdateInfo] = useState<UpdateResult | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateReady, setUpdateReady] = useState(false);
+  const [wailsConnected, setWailsConnected] = useState(false);
 
   useEffect(() => {
     // Check for updates on mount
@@ -135,35 +136,51 @@ export default function Home() {
   };
 
   useEffect(() => {
-    // Check if Wails is ready
-    const checkWails = () => {
-      if (getWailsApp()) {
+    // Robust Wails Runtime Loader
+    let intervalId: NodeJS.Timeout;
+
+    const bindWails = () => {
+      const runtime = getWailsEvents();
+      if (runtime) {
+        console.log("Wails runtime found, binding events.");
+
+        // Prevent double binding if we already bound?
+        // Wails EventsOn returns a cleanup function usually? No, Wails v2 JS runtime doesn't return unbind for EventsOn easily in types.
+        // But 'EventsOff' exists. We should clear first to be safe.
+        runtime.EventsOff("files-dropped");
+
+        runtime.EventsOn("files-dropped", (paths: string[]) => {
+          console.log("Event: files-dropped received", paths);
+          alert("Debug: Files Dropped (Success) -> " + JSON.stringify(paths));
+          if (paths && paths.length > 0) {
+            addFiles(paths);
+          }
+        });
+
+        setWailsConnected(true);
         setIsWailsReady(true);
-      } else {
-        console.log("Wails runtime not detected (Dev mode?)");
+
+        if (intervalId) clearInterval(intervalId);
+        return true;
       }
-    }
-    checkWails();
+      return false;
+    };
 
-    // Listen for Wails file drop event
-    // Listen for Wails file drop event
-    const runtime = getWailsEvents();
-    if (runtime) {
-      console.log("Wails runtime found, binding files-dropped event");
-      runtime.EventsOn("files-dropped", (paths: string[]) => {
-        console.log("Event: files-dropped received", paths);
-        alert("Debug: Files Dropped -> " + JSON.stringify(paths));
-        if (paths && paths.length > 0) {
-          addFiles(paths);
+    if (!bindWails()) {
+      // Poll every 100ms for up to 5 seconds
+      let attempts = 0;
+      intervalId = setInterval(() => {
+        attempts++;
+        if (bindWails() || attempts > 50) {
+          clearInterval(intervalId);
         }
-      });
-    } else {
-      console.error("Wails runtime NOT found during mount");
+      }, 100);
     }
 
-    // Cleanup? Wails events usually persist, but component mount/unmount ideally should clean up.
-    // However, react useEffect cleanup for Wails global events is tricky if not removed properly.
-    // Assuming single page app lifestyle.
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+
 
     // Get Version
     if (getWailsApp()) {
