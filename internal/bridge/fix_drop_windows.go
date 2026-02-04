@@ -46,22 +46,29 @@ func FixWindowsDropPermissions() {
 
 	logToFile(fmt.Sprintf("[Windows Fix] Found Main Window HWND: %x", hwnd))
 
-	// Force parent
-	forceDrag(windows.HWND(hwnd))
+	// Force parent to ACCEPT drops
+	forceDrag(windows.HWND(hwnd), true)
 
 	// 3. Enumerate Children (WebView2 is a child)
+	// Strategy: Disable drops on children so they bubble up to parent?
+	// Or simply ensure that if they are on top, they don't consume it if they aren't Wails savvy.
+	// Actually, if we disable drops on children, Windows should check the parent.
 	cb := windows.NewCallback(func(child windows.HWND, lParam uintptr) uintptr {
-		logToFile(fmt.Sprintf("[Windows Fix] Found Child HWND: %x", child))
-		forceDrag(child)
-		return 1 // Continue enumeration
+		logToFile(fmt.Sprintf("[Windows Fix] Found Child HWND: %x (Disabling drops)", child))
+		forceDrag(child, false) // <-- Changed to FALSE
+		return 1                // Continue enumeration
 	})
 
 	// Fix: Pass nil as lParam (unsafe.Pointer)
 	windows.EnumChildWindows(windows.HWND(hwnd), cb, nil)
 }
 
-func forceDrag(hwnd windows.HWND) {
-	_, _, err := procDragAcceptFiles.Call(uintptr(hwnd), 1)
+func forceDrag(hwnd windows.HWND, enable bool) {
+	val := uintptr(0)
+	if enable {
+		val = 1
+	}
+	_, _, err := procDragAcceptFiles.Call(uintptr(hwnd), val)
 	if err != nil && err.Error() != "The operation completed successfully." {
 		// Usually returns void, ignore trivial errors
 	}
