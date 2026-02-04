@@ -1,0 +1,15 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "mp4-optimizer",
+  "outputfilename": "FastStartInspector",
+  "frontend:install": "pnpm install",
+  "frontend:build": "pnpm run build",
+  "frontend:dev:watcher": "pnpm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "wailsjsdir": "./frontend",
+  "assetsdir": "./frontend/out",
+  "author": {
+    "name": "Antigravity",
+    "email": "ai@example.com"
+  }
+}
