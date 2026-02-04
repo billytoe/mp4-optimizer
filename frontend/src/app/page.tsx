@@ -419,14 +419,19 @@ export default function Home() {
       // Hybrid: Try to get paths from dropzone first
       const paths: string[] = [];
 
+      // Debug: see what we got
+      // alert("Frontend Drop Raw: " + JSON.stringify(acceptedFiles.map(f => ({name: f.name, path: (f as any).path}))));
+
       // Try to get absolute paths (Windows WebView2)
       acceptedFiles.forEach((f: any) => {
         if (f.path) paths.push(f.path);
-        else if (f.name) paths.push(f.name); // Fallback usually doesn't work for full path but good for validation
+        else if (f.name) paths.push(f.name); // Fallback
       });
 
       if (paths.length > 0) {
         console.log("React-Dropzone received paths:", paths);
+        // Only alert if we found something, to compare with backend
+        alert("Debug: React-Dropzone Found -> " + JSON.stringify(paths));
         addFiles(paths);
       }
     },
@@ -438,7 +443,7 @@ export default function Home() {
   return (
     <div
       className="flex flex-col h-screen bg-background text-foreground font-sans p-6 transition-colors duration-300"
-      {...(isWailsReady ? {} : getRootProps())}
+      {...getRootProps()}
     >
 
       {/* Overlay Drop Zone Visuals - Only show if dragging and NOT in Wails mode (since we disable dropzone logic there) 
@@ -475,7 +480,7 @@ export default function Home() {
       <header className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-blue-500 to-emerald-500 bg-clip-text text-transparent">
-            FastStart 视频检测工具
+            FastStart 视频优化
           </h1>
           <p className="text-muted-foreground mt-1">检测与优化 MP4 流媒体播放性能</p>
         </div>
