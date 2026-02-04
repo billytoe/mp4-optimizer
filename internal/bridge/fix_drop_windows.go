@@ -5,6 +5,7 @@ package bridge
 import (
 	"fmt"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -29,39 +30,44 @@ var (
 
 // FixWindowsDropPermissions attempts to allow drag/drop messages through UIPI and force DragAcceptFiles
 func FixWindowsDropPermissions() {
-	// 1. Global Filter
-	procChangeWindowMessageFilter.Call(uintptr(WM_DROPFILES), uintptr(MSGFLT_ADD))
-	procChangeWindowMessageFilter.Call(uintptr(WM_COPYDATA), uintptr(MSGFLT_ADD))
-	procChangeWindowMessageFilter.Call(uintptr(WM_COPYGLOBALDATA), uintptr(MSGFLT_ADD))
-	logToFile("[Windows UIPI Fix] Applied global message filters")
+	go func() {
+		// Wait for WebView2 to fully initialize and settle
+		time.Sleep(3 * time.Second)
+		logToFile("[Windows Fix] Running delayed permission fix...")
 
-	// 2. Find Main Window
-	titlePtr, _ := syscall.UTF16PtrFromString("MP4 FastStart Inspector")
-	hwnd, _, _ := procFindWindowW.Call(0, uintptr(unsafe.Pointer(titlePtr)))
+		// 1. Global Filter
+		procChangeWindowMessageFilter.Call(uintptr(WM_DROPFILES), uintptr(MSGFLT_ADD))
+		procChangeWindowMessageFilter.Call(uintptr(WM_COPYDATA), uintptr(MSGFLT_ADD))
+		procChangeWindowMessageFilter.Call(uintptr(WM_COPYGLOBALDATA), uintptr(MSGFLT_ADD))
+		logToFile("[Windows UIPI Fix] Applied global message filters")
 
-	if hwnd == 0 {
-		logToFile("[Windows Fix] Could not find 'MP4 FastStart Inspector' window.")
-		return
-	}
+		// 2. Find Main Window
+		titlePtr, _ := syscall.UTF16PtrFromString("MP4 FastStart Inspector")
+		hwnd, _, _ := procFindWindowW.Call(0, uintptr(unsafe.Pointer(titlePtr)))
 
-	logToFile(fmt.Sprintf("[Windows Fix] Found Main Window HWND: %x", hwnd))
+		if hwnd == 0 {
+			logToFile("[Windows Fix] Could not find 'MP4 FastStart Inspector' window.")
+			return
+		}
 
-	// Force parent to ACCEPT drops
-	forceDrag(windows.HWND(hwnd), true)
+		logToFile(fmt.Sprintf("[Windows Fix] Found Main Window HWND: %x", hwnd))
 
-	// 3. Enumerate Children (WebView2 is a child)
-	// Strategy: Disable drops on children so they bubble up to parent?
-	// Or simply ensure that they are on top, they don't consume it if they aren't Wails savvy.
-	// Actually, if we disable drops on children, Windows should check the parent.
-	cb := syscall.NewCallback(func(hwnd uintptr, lParam uintptr) uintptr {
-		child := windows.HWND(hwnd)
-		logToFile(fmt.Sprintf("[Windows Fix] Found Child HWND: %x (Disabling drops)", child))
-		forceDrag(child, false) // <-- Changed to FALSE
-		return 1                // Continue enumeration
-	})
+		// Force parent to ACCEPT drops
+		forceDrag(windows.HWND(hwnd), true)
 
-	// Fix: Pass nil as lParam (which satisfies unsafe.Pointer)
-	windows.EnumChildWindows(windows.HWND(hwnd), cb, nil)
+		// 3. Enumerate Children (WebView2 is a child)
+		// Force enable on all children to ensure SOMEBODY catches it
+		cb := syscall.NewCallback(func(hwnd uintptr, lParam uintptr) uintptr {
+			child := windows.HWND(hwnd)
+			logToFile(fmt.Sprintf("[Windows Fix] Found Child HWND: %x (Enabling drops)", child))
+			forceDrag(child, true) // <-- Changed to TRUE
+			return 1               // Continue enumeration
+		})
+
+		// Fix: Pass nil as lParam
+		windows.EnumChildWindows(windows.HWND(hwnd), cb, nil)
+		logToFile("[Windows Fix] Completed delayed fix.")
+	}()
 }
 
 func forceDrag(hwnd windows.HWND, enable bool) {
