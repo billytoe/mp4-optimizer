@@ -60,10 +60,8 @@ func FixWindowsDropPermissions() {
 		return 1                // Continue enumeration
 	})
 
-	// Fix: Pass nil as lParam (unsafe.Pointer) -> Actually EnumChildWindows expets lParam as uintptr in x/sys/windows?
-	// Checking x/sys/windows signature: func EnumChildWindows(hwnd HWND, lpEnumFunc uintptr, lParam uintptr) error
-	// So we need to pass uintptr(0)
-	windows.EnumChildWindows(windows.HWND(hwnd), cb, 0)
+	// Fix: Pass nil as lParam (which satisfies unsafe.Pointer)
+	windows.EnumChildWindows(windows.HWND(hwnd), cb, nil)
 }
 
 func forceDrag(hwnd windows.HWND, enable bool) {
