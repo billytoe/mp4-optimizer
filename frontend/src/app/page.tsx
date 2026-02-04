@@ -157,6 +157,17 @@ export default function Home() {
           }
         });
 
+        // Get Version (Moved inside to ensure Wails is ready)
+        if (getWailsApp()) {
+          getWailsApp().GetAppVersion().then((v: string) => {
+            if (v) {
+              setAppVersion(v);
+              // Check for updates after we have the version
+              checkForUpdates();
+            }
+          });
+        }
+
         setWailsConnected(true);
         setIsWailsReady(true);
 
@@ -166,12 +177,14 @@ export default function Home() {
       return false;
     };
 
+    // Try immediately
     if (!bindWails()) {
       // Poll every 100ms for up to 5 seconds
       let attempts = 0;
       intervalId = setInterval(() => {
         attempts++;
         if (bindWails() || attempts > 50) {
+          if (attempts > 50) console.error("Wails Connection Timed Out");
           clearInterval(intervalId);
         }
       }, 100);
@@ -180,17 +193,6 @@ export default function Home() {
     return () => {
       if (intervalId) clearInterval(intervalId);
     };
-
-
-    // Get Version
-    if (getWailsApp()) {
-      getWailsApp().GetAppVersion().then((v: string) => {
-        if (v) setAppVersion(v);
-        // Auto check for updates on startup?
-        // Let's rely on user click or delayed check
-        // checkForUpdates(v); 
-      });
-    }
   }, []);
 
 
@@ -663,6 +665,9 @@ export default function Home() {
 
       <footer className="mt-4 flex items-center justify-center text-muted-foreground text-xs border-t border-border/50 pt-4 relative">
         <div className="flex items-center gap-2">
+          {/* Connection Status Dot */}
+          <div className={`w-2 h-2 rounded-full ${wailsConnected ? 'bg-emerald-500' : 'bg-red-500 animate-pulse'}`} title={wailsConnected ? "Wails Connected" : "Wails Disconnected"} />
+
           {/* Fix double 'vv' if appVersion already contains 'v' */}
           {appVersion.startsWith('v') ? appVersion : `v${appVersion}`} • {theme === 'light' ? 'Light' : 'Dark'} Mode
         </div>
