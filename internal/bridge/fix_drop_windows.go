@@ -21,9 +21,9 @@ func FixWindowsDropPermissions() {
 	// Attempt to allow WM_DROPFILES
 	ret, _, err := procChangeWindowMessageFilter.Call(uintptr(WM_DROPFILES), uintptr(MSGFLT_ADD))
 	if ret == 0 {
-		fmt.Printf("[Windows UIPI Fix] Failed to add WM_DROPFILES: %v\n", err)
+		logToFile(fmt.Sprintf("[Windows UIPI Fix] Failed to add WM_DROPFILES: %v", err))
 	} else {
-		fmt.Println("[Windows UIPI Fix] Successfully allowed WM_DROPFILES")
+		logToFile("[Windows UIPI Fix] Successfully allowed WM_DROPFILES")
 	}
 
 	// Also allow COPYDATA which is sometimes used
