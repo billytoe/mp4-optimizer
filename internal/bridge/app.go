@@ -3,6 +3,7 @@ package bridge
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"mp4-optimizer/internal/analyzer"
 	"mp4-optimizer/internal/optimizer"
@@ -32,10 +33,21 @@ func NewApp(version string) *App {
 // so we can call the runtime methods
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
+	logToFile("App Startup")
 	runtime.OnFileDrop(ctx, func(x, y int, paths []string) {
+		logToFile(fmt.Sprintf("Dropped files: %v", paths))
 		fmt.Printf("[Go Debug] Dropped files: %v\n", paths)
 		runtime.EventsEmit(ctx, "files-dropped", paths)
 	})
+}
+
+func logToFile(msg string) {
+	f, err := os.OpenFile("debug_log.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	f.WriteString(time.Now().Format("15:04:05") + " " + msg + "\n")
 }
 
 // CheckFile checks if the MP4 file is fast-start optimized.
