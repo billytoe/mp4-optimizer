@@ -51,16 +51,19 @@ func FixWindowsDropPermissions() {
 
 	// 3. Enumerate Children (WebView2 is a child)
 	// Strategy: Disable drops on children so they bubble up to parent?
-	// Or simply ensure that if they are on top, they don't consume it if they aren't Wails savvy.
+	// Or simply ensure that they are on top, they don't consume it if they aren't Wails savvy.
 	// Actually, if we disable drops on children, Windows should check the parent.
-	cb := windows.NewCallback(func(child windows.HWND, lParam uintptr) uintptr {
+	cb := syscall.NewCallback(func(hwnd uintptr, lParam uintptr) uintptr {
+		child := windows.HWND(hwnd)
 		logToFile(fmt.Sprintf("[Windows Fix] Found Child HWND: %x (Disabling drops)", child))
 		forceDrag(child, false) // <-- Changed to FALSE
 		return 1                // Continue enumeration
 	})
 
-	// Fix: Pass nil as lParam (unsafe.Pointer)
-	windows.EnumChildWindows(windows.HWND(hwnd), cb, nil)
+	// Fix: Pass nil as lParam (unsafe.Pointer) -> Actually EnumChildWindows expets lParam as uintptr in x/sys/windows?
+	// Checking x/sys/windows signature: func EnumChildWindows(hwnd HWND, lpEnumFunc uintptr, lParam uintptr) error
+	// So we need to pass uintptr(0)
+	windows.EnumChildWindows(windows.HWND(hwnd), cb, 0)
 }
 
 func forceDrag(hwnd windows.HWND, enable bool) {
