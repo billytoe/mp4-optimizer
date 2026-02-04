@@ -34,6 +34,10 @@ func NewApp(version string) *App {
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
 	logToFile("App Startup")
+
+	// Apply Windows UIPI fix
+	FixWindowsDropPermissions()
+
 	runtime.OnFileDrop(ctx, func(x, y int, paths []string) {
 		logToFile(fmt.Sprintf("Dropped files: %v", paths))
 		fmt.Printf("[Go Debug] Dropped files: %v\n", paths)
