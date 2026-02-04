@@ -431,7 +431,11 @@ export default function Home() {
       if (paths.length > 0) {
         console.log("React-Dropzone received paths:", paths);
         // Only alert if we found something, to compare with backend
-        alert("Debug: React-Dropzone Found -> " + JSON.stringify(paths));
+        // alert("Debug: React-Dropzone Found -> " + JSON.stringify(paths));
+
+        // Note: On Windows with DisableWebViewDrop: true, this frontend handler MIGHT NOT fire at all.
+        // We rely on the Wails 'files-dropped' event (handled in bindWails) for the absolute path.
+        // But if it does fire (e.g. Mac), we can use it.
         addFiles(paths);
       }
     },
