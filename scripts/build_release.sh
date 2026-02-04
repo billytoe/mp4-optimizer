@@ -19,13 +19,15 @@ rm -rf "$BUILD_DIR"
 mkdir -p "$DIST_DIR"
 
 # 1. 编译 Windows 版本
-echo "🪟 正在编译 Windows 版本..."
-wails build -platform windows/amd64 -ldflags "-X main.Version=$VERSION" -o "FastStartInspector_${VERSION}.exe"
+# Build options matching user requirement for console debug
+echo "🪟 正在编译 Windows 版本 (Console Debug Mode)..."
+# Removed -H windowsgui to show console
+wails build -platform windows/amd64 -clean -o "FastStartInspector_Debug_${VERSION}.exe" -ldflags "-X main.Version=${VERSION}"
 
 if [ $? -eq 0 ]; then
   echo "✅ Windows 版本构建成功!"
   # 移动到分发目录
-  mv "$BUILD_DIR/FastStartInspector_${VERSION}.exe" "$DIST_DIR/"
+  mv "$BUILD_DIR/FastStartInspector_Debug_${VERSION}.exe" "$DIST_DIR/"
 else
   echo "❌ Windows 版本构建失败!"
   exit 1

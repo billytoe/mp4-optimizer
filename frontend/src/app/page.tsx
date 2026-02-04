@@ -447,7 +447,7 @@ export default function Home() {
   return (
     <div
       className="flex flex-col h-screen bg-background text-foreground font-sans p-6 transition-colors duration-300"
-      {...getRootProps()}
+      {...(wailsConnected ? {} : getRootProps())}
     >
 
       {/* Overlay Drop Zone Visuals - Only show if dragging and NOT in Wails mode (since we disable dropzone logic there) 

@@ -33,6 +33,7 @@ func NewApp(version string) *App {
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
 	runtime.OnFileDrop(ctx, func(x, y int, paths []string) {
+		fmt.Printf("[Go Debug] Dropped files: %v\n", paths)
 		runtime.EventsEmit(ctx, "files-dropped", paths)
 	})
 }
