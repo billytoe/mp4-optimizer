@@ -35,23 +35,11 @@ func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
 	logToFile("App Startup")
 
-	// Apply Windows UIPI fix
+	// Apply Windows UIPI fix (在 Windows 上启用拖拽权限)
 	FixWindowsDropPermissions()
 
-	runtime.OnFileDrop(ctx, func(x, y int, paths []string) {
-		logToFile(fmt.Sprintf("Dropped files: %v", paths))
-		fmt.Printf("[Go Debug] Dropped files: %v\n", paths)
-		runtime.EventsEmit(ctx, "files-dropped", paths)
-	})
-}
-
-func logToFile(msg string) {
-	f, err := os.OpenFile("debug_log.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	f.WriteString(time.Now().Format("15:04:05") + " " + msg + "\n")
+	// 调用平台特定的拖拽设置 (Windows 需要延迟注册)
+	a.setupFileDrop(ctx)
 }
 
 // CheckFile checks if the MP4 file is fast-start optimized.
@@ -163,4 +151,14 @@ func (a *App) InstallUpdate(url string) error {
 func isMP4(path string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
 	return ext == ".mp4"
+}
+
+func logToFile(msg string) {
+	f, err := os.OpenFile("debug_log.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Println(msg) // fallback to console
+		return
+	}
+	defer f.Close()
+	f.WriteString(time.Now().Format("15:04:05") + " " + msg + "\n")
 }

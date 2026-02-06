@@ -34,7 +34,7 @@ func main() {
 		Height: 768,
 		DragAndDrop: &options.DragAndDrop{
 			EnableFileDrop:     true,
-			DisableWebViewDrop: true,
+			DisableWebViewDrop: false, // 让 WebView2 接收拖拽事件 (Windows 需要)
 		},
 		AssetServer: &assetserver.Options{
 			Assets: assets,

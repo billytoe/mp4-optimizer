@@ -399,55 +399,81 @@ export default function Home() {
   // 3. We listen to BOTH react-dropzone onDrop AND Wails files-dropped event.
   // 4. We deduplicate in addFiles.
 
+  // Use native drop handler for Windows WebView2 compatibility (folders + files)
+  // react-dropzone has issues with folder drops in WebView2
+
+  const [isDragActive, setIsDragActive] = useState(false);
+
   useEffect(() => {
-    // Always attach this to ensure Windows allows the drag
-    const preventDefault = (e: Event) => {
+    const handleDragOver = (e: DragEvent) => {
       e.preventDefault();
+      e.stopPropagation();
+      setIsDragActive(true);
     };
 
-    window.addEventListener("dragover", preventDefault);
-    window.addEventListener("drop", preventDefault);
-
-    return () => {
-      window.removeEventListener("dragover", preventDefault);
-      window.removeEventListener("drop", preventDefault);
+    const handleDragLeave = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragActive(false);
     };
-  }, []); // Run once on mount
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop: (acceptedFiles) => {
-      // Hybrid: Try to get paths from dropzone first
+    const handleDrop = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragActive(false);
+
       const paths: string[] = [];
 
-      // Debug: see what we got
-      // alert("Frontend Drop Raw: " + JSON.stringify(acceptedFiles.map(f => ({name: f.name, path: (f as any).path}))));
+      // Get files from dataTransfer
+      if (e.dataTransfer?.files) {
+        const files = e.dataTransfer.files;
+        console.log("Native Drop - Files:", files.length);
 
-      // Try to get absolute paths (Windows WebView2)
-      acceptedFiles.forEach((f: any) => {
-        if (f.path) paths.push(f.path);
-        else if (f.name) paths.push(f.name); // Fallback
-      });
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i] as any;
+          console.log(`File ${i}:`, { name: file.name, path: file.path, type: file.type, size: file.size });
+
+          // On WebView2, file.path contains the absolute path (for both files AND folders)
+          if (file.path) {
+            paths.push(file.path);
+          } else if (file.name) {
+            // Fallback for browsers without path property
+            paths.push(file.name);
+          }
+        }
+      }
 
       if (paths.length > 0) {
-        console.log("React-Dropzone received paths:", paths);
-        // Only alert if we found something, to compare with backend
-        // alert("Debug: React-Dropzone Found -> " + JSON.stringify(paths));
-
-        // Note: On Windows with DisableWebViewDrop: true, this frontend handler MIGHT NOT fire at all.
-        // We rely on the Wails 'files-dropped' event (handled in bindWails) for the absolute path.
-        // But if it does fire (e.g. Mac), we can use it.
+        console.log("Processing paths:", paths);
         addFiles(paths);
       }
-    },
+    };
+
+    // Attach to document body for full coverage
+    document.body.addEventListener("dragover", handleDragOver);
+    document.body.addEventListener("dragleave", handleDragLeave);
+    document.body.addEventListener("drop", handleDrop);
+
+    return () => {
+      document.body.removeEventListener("dragover", handleDragOver);
+      document.body.removeEventListener("dragleave", handleDragLeave);
+      document.body.removeEventListener("drop", handleDrop);
+    };
+  }, [addFiles]);
+
+  // Keep dropzone for visual feedback only (noDrag=true means it won't intercept)
+  const { getRootProps, getInputProps } = useDropzone({
+    onDrop: () => { }, // No-op, native handler does the work
+    multiple: true,
     noClick: true,
     noKeyboard: true,
-    noDrag: false, // Enable react-dropzone handling
+    noDrag: true, // Disable dropzone drag handling, we use native
   });
 
   return (
     <div
       className="flex flex-col h-screen bg-background text-foreground font-sans p-6 transition-colors duration-300"
-      {...(wailsConnected ? {} : getRootProps())}
+      {...getRootProps()}
     >
 
       {/* Overlay Drop Zone Visuals - Only show if dragging and NOT in Wails mode (since we disable dropzone logic there) 
@@ -554,9 +580,9 @@ export default function Home() {
                 <TableRow>
                   <TableCell colSpan={6} className="h-[400px] text-center text-muted-foreground">
                     <FileVideo className="w-16 h-16 mx-auto mb-4 opacity-20" />
-                    <p>拖拽 MP4 文件到此处</p>
+                    <p>拖拽 MP4 文件或文件夹到此处</p>
                     <p className="text-sm mt-2">或点击“添加文件”</p>
-                    <p className="text-sm mt-2">或点击“添加文件”</p>
+                    <p className="text-sm mt-2">或点击“添加文件夹”</p>
                   </TableCell>
                 </TableRow>
               ) : (

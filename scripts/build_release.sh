@@ -7,10 +7,15 @@ if [ -z "$1" ]; then
 fi
 
 VERSION=$1
-BUILD_DIR="build/bin"
-DIST_DIR="dist/$VERSION"
 
-echo "🚀 开始构建版本: $VERSION"
+# 标准化版本号：移除开头的 'v' (例如 v0.0.1 -> 0.0.1)
+# 行业标准 (SemVer) 建议内部版本号不带 v，仅在文件名或 Display 时添加
+VERSION=${VERSION#v}
+
+BUILD_DIR="build/bin"
+DIST_DIR="dist/v$VERSION"  # 目录名习惯带 v
+
+echo "🚀 开始构建版本: v$VERSION"
 echo "-----------------------------------"
 
 # 清理旧的构建和分发目录
@@ -19,17 +24,29 @@ rm -rf "$BUILD_DIR"
 mkdir -p "$DIST_DIR"
 
 # 1. 编译 Windows 版本
-# Build options matching user requirement for console debug
-echo "🪟 正在编译 Windows 版本 (Console Debug Mode)..."
-# Removed -H windowsgui to show console
-wails build -platform windows/amd64 -clean -o "FastStartInspector_Debug_${VERSION}.exe" -ldflags "-X main.Version=${VERSION}"
+echo "🪟 正在编译 Windows 版本..."
+
+# 1.1 Release Build (Hidden Console)
+echo "  • Building Release version..."
+wails build -platform windows/amd64 -clean -o "FastStartInspector_v${VERSION}.exe" -ldflags "-X main.Version=${VERSION} -H windowsgui"
 
 if [ $? -eq 0 ]; then
-  echo "✅ Windows 版本构建成功!"
-  # 移动到分发目录
-  mv "$BUILD_DIR/FastStartInspector_Debug_${VERSION}.exe" "$DIST_DIR/"
+  echo "  ✅ Release 版本构建成功!"
+  mv "$BUILD_DIR/FastStartInspector_v${VERSION}.exe" "$DIST_DIR/"
 else
-  echo "❌ Windows 版本构建失败!"
+  echo "  ❌ Release 版本构建失败!"
+  exit 1
+fi
+
+# 1.2 Debug Build (Console Visible)
+echo "  • Building Debug version (Console)..."
+wails build -platform windows/amd64 -clean -o "FastStartInspector_Debug_v${VERSION}.exe" -ldflags "-X main.Version=${VERSION}"
+
+if [ $? -eq 0 ]; then
+  echo "  ✅ Debug 版本构建成功!"
+  mv "$BUILD_DIR/FastStartInspector_Debug_v${VERSION}.exe" "$DIST_DIR/"
+else
+  echo "  ❌ Debug 版本构建失败!"
   exit 1
 fi
 
@@ -43,12 +60,12 @@ if [ $? -eq 0 ]; then
   # 3. 压缩 macOS 版本 (Zip)
   echo "📦 正在压缩 macOS 应用..."
   cd "$BUILD_DIR"
-  zip -r "FastStartInspector_${VERSION}_mac.zip" "mp4-optimizer.app"
+  zip -r "FastStartInspector_v${VERSION}_mac.zip" "mp4-optimizer.app"
   
   if [ $? -eq 0 ]; then
     echo "✅ 压缩成功!"
     # 移动到分发目录 (注意我们需要返回上一级目录结构来定位)
-    mv "FastStartInspector_${VERSION}_mac.zip" "../../$DIST_DIR/"
+    mv "FastStartInspector_v${VERSION}_mac.zip" "../../$DIST_DIR/"
   else
     echo "❌ 压缩失败!"
     exit 1
