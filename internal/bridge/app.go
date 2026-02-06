@@ -3,6 +3,7 @@ package bridge
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"mp4-optimizer/internal/analyzer"
 	"mp4-optimizer/internal/optimizer"
@@ -32,10 +33,13 @@ func NewApp(version string) *App {
 // so we can call the runtime methods
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
-	runtime.OnFileDrop(ctx, func(x, y int, paths []string) {
-		fmt.Printf("[Go Debug] Dropped files: %v\n", paths)
-		runtime.EventsEmit(ctx, "files-dropped", paths)
-	})
+	logToFile("App Startup")
+
+	// Apply Windows UIPI fix (在 Windows 上启用拖拽权限)
+	FixWindowsDropPermissions()
+
+	// 调用平台特定的拖拽设置 (Windows 需要延迟注册)
+	a.setupFileDrop(ctx)
 }
 
 // CheckFile checks if the MP4 file is fast-start optimized.
@@ -147,4 +151,14 @@ func (a *App) InstallUpdate(url string) error {
 func isMP4(path string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
 	return ext == ".mp4"
+}
+
+func logToFile(msg string) {
+	f, err := os.OpenFile("debug_log.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Println(msg) // fallback to console
+		return
+	}
+	defer f.Close()
+	f.WriteString(time.Now().Format("15:04:05") + " " + msg + "\n")
 }

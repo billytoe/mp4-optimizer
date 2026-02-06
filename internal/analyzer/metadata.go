@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"mp4-optimizer/pkg/atomic"
 	"os"
 	"time"
 )
@@ -36,86 +37,69 @@ func GetMetadata(path string) (*Metadata, error) {
 		Modified: info.ModTime(),
 	}
 
-	// Basic MP4 atom parsing to find moov -> mvhd (for duration) and trak -> tkhd (for dimensions) + stsd (for codec)
-	// This is a simplified parser.
+	// Use robust atom parser from pkg/atomic
+	atoms, err := atomic.FindAtoms(f)
+	if err != nil {
+		// Even if FindAtoms fails partially, we might have skipped key atoms?
+		// But usually it returns valid structure.
+		// Detailed logging would help here.
+		fmt.Printf("Warning: error scanning atoms in %s: %v\n", path, err)
+	}
 
-	if err := parseAtoms(f, meta); err != nil {
-		// If we fail to parse atoms, we still return what we have (e.g. size, modtime)
-		// but maybe log the error or return it?
-		// For UI purposes, returning partial metadata is better than failing completely if it's just a parse error.
-		// But let's return error for now to be strict, or just log.
-		fmt.Printf("Error parsing atoms for %s: %v\n", path, err)
+	// Find moov
+	var moov *atomic.Atom
+	for _, a := range atoms {
+		if a.Type == "moov" {
+			moov = &a
+			break
+		}
+	}
+
+	if moov == nil {
+		// No moov found, fast exit
+		return meta, nil
+	}
+
+	// Seek to moov start
+	if _, err := f.Seek(moov.Offset, io.SeekStart); err != nil {
+		return nil, err
+	}
+
+	// Read header to skip it and handle extended size
+	// We re-read header to be safe about offset calculation
+	header := make([]byte, 8)
+	if _, err := io.ReadFull(f, header); err != nil {
+		return nil, err
+	}
+	size := int64(binary.BigEndian.Uint32(header[0:4]))
+
+	headerSize := int64(8)
+	if size == 1 {
+		// Extended size, read next 8 bytes
+		var extended [8]byte
+		if _, err := io.ReadFull(f, extended[:]); err != nil {
+			return nil, err
+		}
+		size = int64(binary.BigEndian.Uint64(extended[:]))
+		headerSize += 8
+	}
+
+	// Determine end position of moov
+	// Offset points to start of header.
+	// Body starts at Offset + headerSize.
+	// End is Offset + Size.
+	endPos := moov.Offset + size
+
+	// We are now at the start of body (after header)
+	if err := parseMoov(f, endPos, meta); err != nil {
+		fmt.Printf("Error parsing moov for %s: %v\n", path, err)
 	}
 
 	return meta, nil
 }
 
-// parseAtoms recursively searches for relevant atoms
-func parseAtoms(r io.ReadSeeker, meta *Metadata) error {
-	// We need to look for 'moov'
-	// Inside 'moov':
-	//   - 'mvhd': duration, timescale
-	//   - 'trak':
-	//     - 'tkhd': width, height (for video track)
-	//     - 'mdia' -> 'minf' -> 'stbl' -> 'stsd': codec
-
-	// Scan top level for moov
-	const headerSize = 8
-
-	for {
-		header := make([]byte, headerSize)
-		if _, err := io.ReadFull(r, header); err != nil {
-			if err == io.EOF {
-				break
-			}
-			return err
-		}
-
-		size := int64(binary.BigEndian.Uint32(header[0:4]))
-		typ := string(header[4:8])
-
-		if size == 1 {
-			// Extended size
-			var extended [8]byte
-			if _, err := io.ReadFull(r, extended[:]); err != nil {
-				return err
-			}
-			size = int64(binary.BigEndian.Uint64(extended[:]))
-		}
-
-		if typ == "moov" {
-			// Found moov, parse its children
-			// The body of moov starts here.
-			// We can limit the reader or just track bytes.
-			// For simplicity in this recursive-ish structure:
-			// limit reader is good but io.ReadSeeker is stateful.
-
-			// record end of moov
-			startPos, _ := r.Seek(0, io.SeekCurrent)
-			endPos := startPos + size - headerSize
-			if size == 1 {
-				endPos = startPos + size - headerSize - 8
-			}
-
-			if err := parseMoov(r, endPos, meta); err != nil {
-				return err
-			}
-			return nil // Found and parsed moov, we are done (assuming only one moov)
-		}
-
-		// Skip this atom
-		// size includes header (8 bytes or 16 bytes)
-		payloadSize := size - headerSize
-		if size == 1 {
-			payloadSize -= 8
-		}
-
-		if _, err := r.Seek(payloadSize, io.SeekCurrent); err != nil {
-			return err
-		}
-	}
-	return nil
-}
+// Old parseAtoms removed in favor of atomic.FindAtoms
+// func parseAtoms...
 
 func parseMoov(r io.ReadSeeker, endPos int64, meta *Metadata) error {
 	const headerSize = 8
