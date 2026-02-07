@@ -507,6 +507,24 @@ export default function Home() {
         </div>
       )}
 
+      {/* Fixed position update status - top right corner near title bar */}
+      {(isUpdating || updateReady) && (
+        <div className="fixed top-2 right-24 z-[100] flex items-center gap-2">
+          {isUpdating && (
+            <Badge className="bg-emerald-600/10 text-emerald-600 border-emerald-500/20 px-3 py-1.5 gap-2 shadow-lg backdrop-blur-sm">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              正在下载更新...
+            </Badge>
+          )}
+          {updateReady && (
+            <Button size="sm" onClick={handleRestart} className="bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg animate-pulse gap-2 text-xs">
+              <RefreshCw className="w-3.5 h-3.5" />
+              重启以更新
+            </Button>
+          )}
+        </div>
+      )}
+
       <header className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-blue-500 to-emerald-500 bg-clip-text text-transparent">
@@ -515,20 +533,6 @@ export default function Home() {
           <p className="text-muted-foreground mt-1">检测与优化 MP4 流媒体播放性能</p>
         </div>
         <div className="flex gap-4 items-center">
-          {/* Auto-Update Status Indicators */}
-          {isUpdating && (
-            <Badge className="bg-emerald-600/10 text-emerald-600 border-emerald-500/20 px-3 py-1 h-9 gap-2">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Downloading...
-            </Badge>
-          )}
-          {updateReady && (
-            <Button size="sm" onClick={handleRestart} className="bg-emerald-600 hover:bg-emerald-500 text-white h-9 shadow-lg animate-pulse gap-2">
-              <RefreshCw className="w-4 h-4" />
-              Restart to Update
-            </Button>
-          )}
-
           <Button variant="ghost" size="icon" onClick={toggleTheme} className="text-muted-foreground hover:text-foreground">
             {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
           </Button>

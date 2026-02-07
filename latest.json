@@ -1,6 +1,6 @@
 {
-    "version": "0.0.3",
-    "download_url_windows": "https://github.com/billytoe/mp4-optimizer/releases/download/v0.0.3/FastStartInspector_v0.0.3.exe",
-    "download_url_mac": "https://github.com/billytoe/mp4-optimizer/releases/download/v0.0.3/FastStartInspector_v0.0.3_mac.zip",
-    "release_notes": "1. 修复了 Windows 拖拽问题 (请见 Known Issues)"
+    "version": "0.0.5",
+    "download_url_windows": "https://github.com/billytoe/mp4-optimizer/releases/download/v0.0.5/FastStartInspector_v0.0.5.exe",
+    "download_url_mac": "https://github.com/billytoe/mp4-optimizer/releases/download/v0.0.5/FastStartInspector_v0.0.5_mac.zip",
+    "release_notes": "1. 自动更新功能"
 }
