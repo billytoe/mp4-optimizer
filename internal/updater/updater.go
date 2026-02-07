@@ -1,9 +1,13 @@
 package updater
 
 import (
+	"archive/zip"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -78,6 +82,12 @@ func CheckUpdate(currentVersion string, updateURL string) (*CheckResult, error) 
 
 // ApplyUpdate downloads and applies the update
 func ApplyUpdate(downloadURL string) error {
+	// macOS requires special handling: downloads are .zip files containing .app bundles
+	if runtime.GOOS == "darwin" && strings.HasSuffix(downloadURL, ".zip") {
+		return applyMacOSUpdate(downloadURL)
+	}
+
+	// Windows: use selfupdate for single executable
 	resp, err := http.Get(downloadURL)
 	if err != nil {
 		return fmt.Errorf("failed to download update: %w", err)
@@ -88,13 +98,156 @@ func ApplyUpdate(downloadURL string) error {
 		return fmt.Errorf("bad status: %s", resp.Status)
 	}
 
-	// Apply update
+	// Apply update (Windows .exe)
 	err = selfupdate.Apply(resp.Body, selfupdate.Options{})
 	if err != nil {
-		// selfupdate might fail if binary is not writable or signature check fails (if configured)
-		// Usually works for unsigned binaries if no options passed.
-		// On Error, we roll back? selfupdate handles that.
 		return err
+	}
+
+	return nil
+}
+
+// applyMacOSUpdate handles macOS .app bundle updates
+func applyMacOSUpdate(downloadURL string) error {
+	// 1. Download zip to temp file
+	resp, err := http.Get(downloadURL)
+	if err != nil {
+		return fmt.Errorf("failed to download update: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("bad status: %s", resp.Status)
+	}
+
+	// Create temp file for zip
+	tmpZip, err := os.CreateTemp("", "update-*.zip")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer os.Remove(tmpZip.Name())
+
+	// Copy download to temp file
+	_, err = io.Copy(tmpZip, resp.Body)
+	if err != nil {
+		tmpZip.Close()
+		return fmt.Errorf("failed to save download: %w", err)
+	}
+	tmpZip.Close()
+
+	// 2. Find current .app bundle path
+	// os.Executable() returns something like /path/to/App.app/Contents/MacOS/binary
+	exePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get executable path: %w", err)
+	}
+
+	// Navigate up to find .app directory
+	// /path/to/App.app/Contents/MacOS/binary -> /path/to/App.app
+	appPath := exePath
+	for i := 0; i < 3; i++ {
+		appPath = filepath.Dir(appPath)
+	}
+
+	if !strings.HasSuffix(appPath, ".app") {
+		return fmt.Errorf("could not locate .app bundle from executable path: %s", exePath)
+	}
+
+	// 3. Create temp directory for extraction
+	tmpDir, err := os.MkdirTemp("", "update-extract-")
+	if err != nil {
+		return fmt.Errorf("failed to create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// 4. Extract zip
+	if err := unzip(tmpZip.Name(), tmpDir); err != nil {
+		return fmt.Errorf("failed to extract zip: %w", err)
+	}
+
+	// 5. Find extracted .app (should be the only .app in tmpDir)
+	var newAppPath string
+	entries, err := os.ReadDir(tmpDir)
+	if err != nil {
+		return fmt.Errorf("failed to read temp dir: %w", err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() && strings.HasSuffix(entry.Name(), ".app") {
+			newAppPath = filepath.Join(tmpDir, entry.Name())
+			break
+		}
+	}
+	if newAppPath == "" {
+		return fmt.Errorf("no .app found in downloaded zip")
+	}
+
+	// 6. Backup old .app and replace with new
+	backupPath := appPath + ".backup"
+	os.RemoveAll(backupPath) // Remove old backup if exists
+
+	// Rename old to backup
+	if err := os.Rename(appPath, backupPath); err != nil {
+		return fmt.Errorf("failed to backup old app: %w", err)
+	}
+
+	// Move new app to original location
+	if err := os.Rename(newAppPath, appPath); err != nil {
+		// Restore backup on failure
+		os.Rename(backupPath, appPath)
+		return fmt.Errorf("failed to install new app: %w", err)
+	}
+
+	// Remove backup
+	os.RemoveAll(backupPath)
+
+	return nil
+}
+
+// unzip extracts a zip file to the destination directory
+func unzip(src, dest string) error {
+	r, err := zip.OpenReader(src)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+
+	for _, f := range r.File {
+		fpath := filepath.Join(dest, f.Name)
+
+		// Check for ZipSlip vulnerability
+		if !strings.HasPrefix(fpath, filepath.Clean(dest)+string(os.PathSeparator)) {
+			return fmt.Errorf("illegal file path: %s", fpath)
+		}
+
+		if f.FileInfo().IsDir() {
+			os.MkdirAll(fpath, os.ModePerm)
+			continue
+		}
+
+		// Create parent directories
+		if err := os.MkdirAll(filepath.Dir(fpath), os.ModePerm); err != nil {
+			return err
+		}
+
+		// Create file
+		outFile, err := os.OpenFile(fpath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+		if err != nil {
+			return err
+		}
+
+		rc, err := f.Open()
+		if err != nil {
+			outFile.Close()
+			return err
+		}
+
+		_, err = io.Copy(outFile, rc)
+		outFile.Close()
+		rc.Close()
+
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
