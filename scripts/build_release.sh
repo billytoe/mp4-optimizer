@@ -9,11 +9,17 @@ fi
 VERSION=$1
 
 # 标准化版本号：移除开头的 'v' (例如 v0.0.1 -> 0.0.1)
-# 行业标准 (SemVer) 建议内部版本号不带 v，仅在文件名或 Display 时添加
 VERSION=${VERSION#v}
 
 BUILD_DIR="build/bin"
-DIST_DIR="dist/v$VERSION"  # 目录名习惯带 v
+DIST_DIR="dist/v$VERSION"
+
+# 固定的发布文件名（不带版本号，简化版本管理）
+WIN_EXE_NAME="FastStartInspector.exe"
+WIN_DEBUG_EXE="FastStartInspector_Debug.exe"
+WIN_ZIP_NAME="FastStartInspector_windows.zip"
+WIN_DEBUG_ZIP="FastStartInspector_Debug_windows.zip"
+MAC_ZIP_NAME="FastStartInspector_darwin_universal.zip"
 
 echo "🚀 开始构建版本: v$VERSION"
 echo "-----------------------------------"
@@ -28,11 +34,15 @@ echo "🪟 正在编译 Windows 版本..."
 
 # 1.1 Release Build (Hidden Console)
 echo "  • Building Release version..."
-wails build -platform windows/amd64 -clean -o "FastStartInspector_v${VERSION}.exe" -ldflags "-X main.Version=${VERSION} -H windowsgui"
+wails build -platform windows/amd64 -clean -o "$WIN_EXE_NAME" -ldflags "-X main.Version=${VERSION} -H windowsgui"
 
 if [ $? -eq 0 ]; then
   echo "  ✅ Release 版本构建成功!"
-  mv "$BUILD_DIR/FastStartInspector_v${VERSION}.exe" "$DIST_DIR/"
+  # 打包成 zip（绕过浏览器安全警告）
+  cd "$BUILD_DIR"
+  zip "$WIN_ZIP_NAME" "$WIN_EXE_NAME"
+  mv "$WIN_ZIP_NAME" "../../$DIST_DIR/"
+  cd - > /dev/null
 else
   echo "  ❌ Release 版本构建失败!"
   exit 1
@@ -40,11 +50,14 @@ fi
 
 # 1.2 Debug Build (Console Visible)
 echo "  • Building Debug version (Console)..."
-wails build -platform windows/amd64 -clean -o "FastStartInspector_Debug_v${VERSION}.exe" -ldflags "-X main.Version=${VERSION}"
+wails build -platform windows/amd64 -clean -o "$WIN_DEBUG_EXE" -ldflags "-X main.Version=${VERSION}"
 
 if [ $? -eq 0 ]; then
   echo "  ✅ Debug 版本构建成功!"
-  mv "$BUILD_DIR/FastStartInspector_Debug_v${VERSION}.exe" "$DIST_DIR/"
+  cd "$BUILD_DIR"
+  zip "$WIN_DEBUG_ZIP" "$WIN_DEBUG_EXE"
+  mv "$WIN_DEBUG_ZIP" "../../$DIST_DIR/"
+  cd - > /dev/null
 else
   echo "  ❌ Debug 版本构建失败!"
   exit 1
@@ -60,12 +73,11 @@ if [ $? -eq 0 ]; then
   # 3. 压缩 macOS 版本 (Zip)
   echo "📦 正在压缩 macOS 应用..."
   cd "$BUILD_DIR"
-  zip -r "FastStartInspector_v${VERSION}_mac.zip" "mp4-optimizer.app"
+  zip -r "$MAC_ZIP_NAME" "mp4-optimizer.app"
   
   if [ $? -eq 0 ]; then
     echo "✅ 压缩成功!"
-    # 移动到分发目录 (注意我们需要返回上一级目录结构来定位)
-    mv "FastStartInspector_v${VERSION}_mac.zip" "../../$DIST_DIR/"
+    mv "$MAC_ZIP_NAME" "../../$DIST_DIR/"
   else
     echo "❌ 压缩失败!"
     exit 1
@@ -81,7 +93,16 @@ echo "-----------------------------------"
 echo "🎉 构建打包完成！"
 echo "📂 输出目录: $DIST_DIR"
 echo ""
-echo "📝 接下来的步骤:"
-echo "1. 打开 Dist 目录: open $DIST_DIR"
-echo "2. 将该目录下的 .exe 和 .zip 文件拖拽到 GitHub Release 的 Assets 区域。"
-echo "3. 获取下载链接后，更新根目录下的 latest.json 并提交代码。"
+echo "📄 发布文件（全部为 zip 格式）:"
+echo "   • Windows: $WIN_ZIP_NAME, $WIN_DEBUG_ZIP"
+echo "   • macOS:   $MAC_ZIP_NAME"
+echo ""
+echo "📝 更新 latest.json 示例:"
+cat << EOF
+{
+    "version": "$VERSION",
+    "download_url_windows": "https://github.com/billytoe/mp4-optimizer/releases/download/v$VERSION/$WIN_ZIP_NAME",
+    "download_url_mac": "https://github.com/billytoe/mp4-optimizer/releases/download/v$VERSION/$MAC_ZIP_NAME",
+    "release_notes": "更新说明..."
+}
+EOF

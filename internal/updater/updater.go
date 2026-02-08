@@ -82,12 +82,16 @@ func CheckUpdate(currentVersion string, updateURL string) (*CheckResult, error) 
 
 // ApplyUpdate downloads and applies the update
 func ApplyUpdate(downloadURL string) error {
-	// macOS requires special handling: downloads are .zip files containing .app bundles
-	if runtime.GOOS == "darwin" && strings.HasSuffix(downloadURL, ".zip") {
-		return applyMacOSUpdate(downloadURL)
+	// Both Windows and macOS now use zip format
+	if strings.HasSuffix(downloadURL, ".zip") {
+		if runtime.GOOS == "darwin" {
+			return applyMacOSUpdate(downloadURL)
+		} else if runtime.GOOS == "windows" {
+			return applyWindowsUpdate(downloadURL)
+		}
 	}
 
-	// Windows: use selfupdate for single executable
+	// Fallback: direct exe update (legacy, not recommended)
 	resp, err := http.Get(downloadURL)
 	if err != nil {
 		return fmt.Errorf("failed to download update: %w", err)
@@ -98,13 +102,117 @@ func ApplyUpdate(downloadURL string) error {
 		return fmt.Errorf("bad status: %s", resp.Status)
 	}
 
-	// Apply update (Windows .exe)
 	err = selfupdate.Apply(resp.Body, selfupdate.Options{})
 	if err != nil {
 		return err
 	}
 
 	return nil
+}
+
+// applyWindowsUpdate handles Windows zip updates
+func applyWindowsUpdate(downloadURL string) error {
+	// 1. Download zip to temp file
+	resp, err := http.Get(downloadURL)
+	if err != nil {
+		return fmt.Errorf("failed to download update: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("bad status: %s", resp.Status)
+	}
+
+	tmpZip, err := os.CreateTemp("", "update-*.zip")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer os.Remove(tmpZip.Name())
+
+	_, err = io.Copy(tmpZip, resp.Body)
+	if err != nil {
+		tmpZip.Close()
+		return fmt.Errorf("failed to save download: %w", err)
+	}
+	tmpZip.Close()
+
+	// 2. Get current executable path
+	exePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get executable path: %w", err)
+	}
+
+	// 3. Create temp directory for extraction
+	tmpDir, err := os.MkdirTemp("", "update-extract-")
+	if err != nil {
+		return fmt.Errorf("failed to create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// 4. Extract zip
+	if err := unzip(tmpZip.Name(), tmpDir); err != nil {
+		return fmt.Errorf("failed to extract zip: %w", err)
+	}
+
+	// 5. Find the extracted .exe file
+	var newExePath string
+	entries, err := os.ReadDir(tmpDir)
+	if err != nil {
+		return fmt.Errorf("failed to read temp dir: %w", err)
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(strings.ToLower(entry.Name()), ".exe") {
+			newExePath = filepath.Join(tmpDir, entry.Name())
+			break
+		}
+	}
+	if newExePath == "" {
+		return fmt.Errorf("no .exe found in downloaded zip")
+	}
+
+	// 6. Backup old exe and replace with new
+	backupPath := exePath + ".backup"
+	os.Remove(backupPath) // Remove old backup if exists
+
+	// Rename current exe to backup
+	if err := os.Rename(exePath, backupPath); err != nil {
+		return fmt.Errorf("failed to backup old exe: %w", err)
+	}
+
+	// Copy new exe to original location (use copy instead of rename for cross-volume)
+	if err := copyFile(newExePath, exePath); err != nil {
+		// Restore backup on failure
+		os.Rename(backupPath, exePath)
+		return fmt.Errorf("failed to install new exe: %w", err)
+	}
+
+	// Remove backup (cleanup)
+	os.Remove(backupPath)
+
+	return nil
+}
+
+// copyFile copies a file from src to dst
+func copyFile(src, dst string) error {
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	srcInfo, err := srcFile.Stat()
+	if err != nil {
+		return err
+	}
+
+	dstFile, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, srcInfo.Mode())
+	if err != nil {
+		return err
+	}
+	defer dstFile.Close()
+
+	_, err = io.Copy(dstFile, srcFile)
+	return err
 }
 
 // applyMacOSUpdate handles macOS .app bundle updates

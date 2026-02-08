@@ -507,19 +507,19 @@ export default function Home() {
         </div>
       )}
 
-      {/* Fixed position update status - top right corner near title bar */}
+      {/* Fixed position update status - top right corner aligned with buttons */}
       {(isUpdating || updateReady) && (
-        <div className="fixed top-2 right-24 z-[100] flex items-center gap-2">
+        <div className="fixed top-1.5 right-6 z-[100] flex items-center gap-2">
           {isUpdating && (
-            <Badge className="bg-emerald-600/10 text-emerald-600 border-emerald-500/20 px-3 py-1.5 gap-2 shadow-lg backdrop-blur-sm">
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              正在下载更新...
+            <Badge className="bg-emerald-600/20 text-emerald-500 border-emerald-500/30 px-2 py-1 gap-1.5 text-xs shadow-md backdrop-blur-sm">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              下载中...
             </Badge>
           )}
           {updateReady && (
-            <Button size="sm" onClick={handleRestart} className="bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg animate-pulse gap-2 text-xs">
-              <RefreshCw className="w-3.5 h-3.5" />
-              重启以更新
+            <Button size="sm" onClick={handleRestart} className="bg-emerald-600 hover:bg-emerald-500 text-white shadow-md gap-1.5 text-xs h-7 px-2.5">
+              <RefreshCw className="w-3 h-3" />
+              重启更新
             </Button>
           )}
         </div>
