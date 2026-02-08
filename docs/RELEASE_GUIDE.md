@@ -1,127 +1,94 @@
 # 🚀 发布与部署指南 (Release Guide)
 
-本文档将详细说明如何编译、打包并在 GitHub 上发布 **MP4 FastStart Inspector** 的新版本。
+本文档详细说明如何构建、打包并在 GitHub 上发布 **MP4 FastStart Inspector** 的新版本。
+
+本项目已实现**全自动化**的一键构建和发布流程。
+
+---
 
 ## 1. 发布前准备
 
-在开始构建之前，请确保当前代码已准备就绪：
+在开始发布之前，请确保：
 
-1.  **代码测试**：确保 `wails dev` 下所有功能正常。
-2.  **更新依赖**：运行 `go mod tidy` 和 `pnpm install` 确保依赖最新。
-3.  **确定版本号**：决定本次发布的版本号（例如 `v1.0.1`）。建议遵循 [Semantic Versioning](https://semver.org/) (语义化版本控制)。
+1.  **安装必要工具**：
+    *   `gh` (GitHub CLI): 用于自动上传 Release。
+        ```bash
+        brew install gh
+        gh auth login
+        ```
+2.  **更新依赖**：运行 `go mod tidy` 和 `pnpm install`。
+3.  **确定版本号**：例如 `v1.0.6`。
 
 ---
 
-## 2. 编译构建 (Build)
+## 2. 更新 Changelog (必须)
 
-我们需要通过命令行构建 Windows 和 macOS 的可执行文件。构建时需**注入版本号**，这对自动更新功能至关重要。
+自动发布脚本会从 `CHANGELOG.md` 读取发布说明。如果未找到对应版本的说明，脚本会中止发布。
 
-### Windows 版本编译
+请在 `CHANGELOG.md` 顶部的 `[Unreleased]` 下方添加新版本记录：
 
-在项目根目录下运行以下命令（支持在 macOS 上交叉编译）：
+```markdown
+## [1.0.6] - 2026-02-08
 
-```bash
-# 请将 v1.0.1 替换为你实际的版本号
-wails build -platform windows/amd64 -ldflags "-X main.Version=v1.0.1"
-```
+### ✨ 新增
+- ...
 
-*   **产出文件**：`build/bin/MP4 FastStart Inspector.exe`
-*   **重命名建议**：为了清晰，建议将文件重命名为 `FastStartInspector_v1.0.1.exe`。
-
-### macOS 版本编译
-
-仅支持在 macOS 系统上执行：
-
-```bash
-# 请将 v1.0.1 替换为你实际的版本号
-wails build -platform darwin/universal -ldflags "-X main.Version=v1.0.1"
-```
-
-*   **产出文件**：`build/bin/MP4 FastStart Inspector.app`
-*   **注意**：GitHub Releases 不支持直接上传文件夹（`.app` 本质是文件夹），因此必须先将其**压缩为 ZIP**。
-
-**压缩命令：**
-```bash
-cd build/bin
-zip -r "FastStartInspector_v1.0.1_mac.zip" "MP4 FastStart Inspector.app"
+### 🐛 修复
+- ...
 ```
 
 ---
 
-## 3. 在 GitHub 上创建 Release
+## 3. 一键构建与发布 (推荐)
 
-准备好构建产物后，我们可以发布 release。
+我们提供了一个全自动脚本 `scripts/release_github.sh`，它会：
+1.  检查 `CHANGELOG.md` 是否包含该版本的更新日志。
+2.  自动构建 Windows (Release/Debug) 和 macOS (Universal) 版本。
+3.  自动打包为 Zip 文件。
+4.  自动创建 GitHub Release 并上传所有附件。
+5.  生成 `latest.json` 更新片段。
 
-1.  **访问 GitHub Releases 页面**：
-    *   打开你的 GitHub 仓库主页。
-    *   点击右侧边栏的 **"Releases"** 部分，或者点击 **"Create a new release"**。
+### 运行发布脚本
 
-2.  **打标签 (Tag version)**：
-    *   点击 **"Choose a tag"** 下拉菜单。
-    *   输入新的版本号（例如 `v1.0.1`）。
-    *   点击 **"Create new tag: v1.0.1" on publish**。
+```bash
+# 请替换为你实际的版本号
+./scripts/release_github.sh v1.0.6
+```
 
-3.  **填写标题和说明**：
-    *   **Release title**: 填写版本号或简短描述，例如 `v1.0.1 - 修复拖拽问题`。
-    *   **Describe this release**: 详细列出变更日志 (Changelog)。
-    
-    *模板示例：*
-    ```markdown
-    ## ✨ 新特性
-    *   新增了深色模式支持。
-    *   优化了 MP4 分析速度。
+脚本执行成功后，你将看到 GitHub Release 的链接。
 
-    ## 🐛 修复
-    *   修复了 Windows 下无法拖拽文件夹的问题。
+---
+
+## 4. 启用自动更新 (Auto-Update)
+
+发布成功后，脚本会在终端输出 `latest.json` 的更新内容。
+
+1.  **复制** 终端输出的 JSON 内容。
+2.  **覆盖** 项目根目录下的 `latest.json` 文件。
+3.  **提交并推送**：
+    ```bash
+    git add latest.json
+    git commit -m "chore: update latest.json to v1.0.6"
+    git push origin main
     ```
 
-4.  **上传附件 (Assets)**：
-    *   将之前准备好的文件拖入底部的 "Attach binaries by dropping them here..." 区域：
-        1.  Windows `exe` 文件 (例如 `FastStartInspector_v1.0.1.exe`)
-        2.  macOS `zip` 压缩包 (例如 `FastStartInspector_v1.0.1_mac.zip`)
-
-5.  **发布**：
-    *   确认无误后，点击绿色按钮 **"Publish release"**。
+用户重启应用后即可检测到新版本并自动更新。
 
 ---
 
-## 4. (可选) 配置 GitHub 仓库信息
+## 5. 手动构建 (仅构建不发布)
 
-为了让项目看起来更专业，建议更新仓库顶部的 **About** 信息。
+如果你只想构建产物而不发布到 GitHub，可以使用：
 
-*   **Description (简介)**: 
-    > A cross-platform desktop tool to optimize MP4 files for fast network streaming (FastStart). Instantly detects and moves the 'moov' atom. Built with Wails (Golang) + React.
-    
-    *(中文版可选：一款基于 Wails + React 开发的跨平台 MP4 视频 FastStart 优化工具，支持秒开检测与一键修复。)*
+```bash
+./scripts/build_release.sh v1.0.6
+```
 
-*   **Website (官网)**: 
-    *   如果你有官网可以填，没有的话可以留空或填仓库地址。
-
-*   **Topics (标签)**:
-    添加以下标签有助于被搜索到：
-    `mp4`, `video-optimization`, `wails`, `golang`, `react`, `desktop-app`, `streaming`, `faststart`, `ffmpeg`
+产物将生成在 `dist/v1.0.6/` 目录下。
 
 ---
 
-## 5. 自动更新注意事项 (Auto-Update)
+## 6. 自动更新原理
 
-如果你启用了应用的自动更新功能，发布 Release 后还需要更新你的 `latest.json` 静态文件。
-
-1.  **发布 Release**：按上述步骤在 GitHub 发布新版本，并上传 `.exe` (Windows) 和 `.zip` (macOS)。
-2.  **获取下载链接**：在 Release 页面右键点击附件 -> 复制链接地址。
-3.  **更新 `latest.json`**：
-    *   编辑项目根目录下的 `latest.json` 文件。
-    *   填入新版本号、发布说明和下载链接。
-    *   **提交并推送 (Push)** 代码到 GitHub。
-    
-    *`latest.json` 示例：*
-    ```json
-    {
-      "version": "v1.0.1",
-      "download_url_windows": "https://github.com/billytoe/mp4-optimizer/releases/download/v1.0.1/FastStartInspector_v1.0.1.exe",
-      "download_url_mac": "https://github.com/billytoe/mp4-optimizer/releases/download/v1.0.1/FastStartInspector_v1.0.1_mac.zip",
-      "release_notes": "1. 修复了拖拽问题\n2. 优化了性能"
-    }
-    ```
-    
-    *注意：App 默认配置为读取 GitHub Raw 地址 (`raw.githubusercontent.com/.../latest.json`)。因此，更新此文件并推送后，用户端即可检测到升级。*
+- **Windows**: 下载 zip -> 解压 -> 备份旧 exe -> 替换新 exe -> 自动重启。
+- **macOS**: 下载 zip -> 解压 -> 定位 `.app` -> 替换整个 Bundle -> 自动重启。

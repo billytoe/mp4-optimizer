@@ -53,4 +53,4 @@ yarn-error.log*
 next-env.d.ts
 dist/
 frontend/out/
-scripts/install_skills.sh
+scripts/
