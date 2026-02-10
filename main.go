@@ -34,7 +34,9 @@ func main() {
 		Height: 768,
 		DragAndDrop: &options.DragAndDrop{
 			EnableFileDrop:     true,
-			DisableWebViewDrop: false, // 让 WebView2 接收拖拽事件 (Windows 需要)
+			DisableWebViewDrop: true, // 关键修复：禁用 WebView2 拖拽，让 Wails 原生处理（解决 Win10 兼容性）
+			CSSDropProperty:    "--wails-drop-target",
+			CSSDropValue:       "drop",
 		},
 		AssetServer: &assetserver.Options{
 			Assets: assets,

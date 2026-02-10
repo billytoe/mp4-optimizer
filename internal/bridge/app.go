@@ -89,16 +89,22 @@ func (a *App) ExpandPaths(paths []string) ([]string, error) {
 	var result []string
 	uniquePaths := make(map[string]bool)
 
+	logToFile(fmt.Sprintf("[ExpandPaths] Start processing %d paths: %v", len(paths), paths))
+
 	for _, p := range paths {
-		info, err := os.Stat(p)
+		cleanPath := filepath.Clean(p)
+		info, err := os.Stat(cleanPath)
 		if err != nil {
+			logToFile(fmt.Sprintf("[ExpandPaths] Error accessing path '%s': %v", cleanPath, err))
 			continue // Skip invalid paths
 		}
 
 		if info.IsDir() {
+			logToFile(fmt.Sprintf("[ExpandPaths] processing directory: %s", cleanPath))
 			// Walk directory
-			err := filepath.WalkDir(p, func(path string, d os.DirEntry, err error) error {
+			err := filepath.WalkDir(cleanPath, func(path string, d os.DirEntry, err error) error {
 				if err != nil {
+					logToFile(fmt.Sprintf("[ExpandPaths] Walk error at %s: %v", path, err))
 					return nil // Skip errors accessing files
 				}
 				if !d.IsDir() {
@@ -115,21 +121,25 @@ func (a *App) ExpandPaths(paths []string) ([]string, error) {
 				return nil
 			})
 			if err != nil {
-				fmt.Printf("Error walking dir %s: %v\n", p, err)
+				logToFile(fmt.Sprintf("[ExpandPaths] Error walking dir %s: %v", cleanPath, err))
+				fmt.Printf("Error walking dir %s: %v\n", cleanPath, err)
 			}
 		} else {
 			// It's a file
-			if isMP4(p) {
-				absPath, err := filepath.Abs(p)
+			if isMP4(cleanPath) {
+				absPath, err := filepath.Abs(cleanPath)
 				if err == nil {
 					if !uniquePaths[absPath] {
 						uniquePaths[absPath] = true
 						result = append(result, absPath)
 					}
 				}
+			} else {
+				logToFile(fmt.Sprintf("[ExpandPaths] Skipped non-MP4 file: %s", cleanPath))
 			}
 		}
 	}
+	logToFile(fmt.Sprintf("[ExpandPaths] Finished. Found %d MP4 files.", len(result)))
 	return result, nil
 }
 

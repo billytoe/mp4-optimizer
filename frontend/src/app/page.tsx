@@ -144,25 +144,31 @@ export default function Home() {
       if (runtime) {
         console.log("Wails runtime found, binding events.");
 
-        // Prevent double binding if we already bound?
-        // Wails EventsOn returns a cleanup function usually? No, Wails v2 JS runtime doesn't return unbind for EventsOn easily in types.
-        // But 'EventsOff' exists. We should clear first to be safe.
+        // 1. Listen for Go-side files-dropped event
         runtime.EventsOff("files-dropped");
-
         runtime.EventsOn("files-dropped", (paths: string[]) => {
           console.log("Event: files-dropped received", paths);
-          alert("Debug: Files Dropped (Success) -> " + JSON.stringify(paths));
           if (paths && paths.length > 0) {
             addFiles(paths);
           }
         });
 
-        // Get Version (Moved inside to ensure Wails is ready)
+        // 2. Also register Wails JS OnFileDrop as additional receiver
+        //    This fires via Wails native IDropTarget -> JS IPC
+        if (runtime.OnFileDrop) {
+          runtime.OnFileDrop((x: number, y: number, paths: string[]) => {
+            console.log("Wails JS OnFileDrop triggered", { x, y, paths });
+            if (paths && paths.length > 0) {
+              addFiles(paths);
+            }
+          }, true); // useDropTarget=true for CSS-based visual feedback
+        }
+
+        // Get Version
         if (getWailsApp()) {
           getWailsApp().GetAppVersion().then((v: string) => {
             if (v) {
               setAppVersion(v);
-              // Check for updates after we have the version
               checkForUpdates();
             }
           });
@@ -179,7 +185,6 @@ export default function Home() {
 
     // Try immediately
     if (!bindWails()) {
-      // Poll every 100ms for up to 5 seconds
       let attempts = 0;
       intervalId = setInterval(() => {
         attempts++;
@@ -192,6 +197,8 @@ export default function Home() {
 
     return () => {
       if (intervalId) clearInterval(intervalId);
+      const runtime = getWailsEvents();
+      if (runtime?.OnFileDropOff) runtime.OnFileDropOff();
     };
   }, []);
 
@@ -216,7 +223,13 @@ export default function Home() {
       processedPaths = newPaths.filter(p => !!p);
     }
 
-    if (!processedPaths || processedPaths.length === 0) return;
+    if (!processedPaths || processedPaths.length === 0) {
+      // 增强反馈：如果处理后为空（且原输入不为空），说明可能是文件夹内没有 MP4 或权限问题
+      if (newPaths.length > 0) {
+        alert("未找到 MP4 文件，或者无法访问拖拽的文件夹。\n请检查 debug_log.txt 获取详细信息。");
+      }
+      return;
+    }
 
     const newItems: FileItem[] = processedPaths.map((path) => ({
       id: path, // Use path as ID for simplicity
@@ -404,62 +417,43 @@ export default function Home() {
 
   const [isDragActive, setIsDragActive] = useState(false);
 
+  // Detect drag-active state via Wails CSS property (--wails-drop-target)
+  // Wails native IDropTarget sets this on document.body when dragging over the window
   useEffect(() => {
+    const observer = new MutationObserver(() => {
+      const style = document.body.getAttribute('style') || '';
+      const active = style.includes('--wails-drop-target');
+      setIsDragActive(active);
+    });
+    observer.observe(document.body, { attributes: true, attributeFilter: ['style'] });
+
+    // Also keep DOM dragover/dragleave as fallback (e.g. dev mode without Wails)
     const handleDragOver = (e: DragEvent) => {
       e.preventDefault();
-      e.stopPropagation();
-      setIsDragActive(true);
+      if (!isWailsReady) setIsDragActive(true);
     };
-
     const handleDragLeave = (e: DragEvent) => {
       e.preventDefault();
-      e.stopPropagation();
-      setIsDragActive(false);
+      if (!isWailsReady) setIsDragActive(false);
     };
-
     const handleDrop = (e: DragEvent) => {
       e.preventDefault();
-      e.stopPropagation();
       setIsDragActive(false);
-
-      const paths: string[] = [];
-
-      // Get files from dataTransfer
-      if (e.dataTransfer?.files) {
-        const files = e.dataTransfer.files;
-        console.log("Native Drop - Files:", files.length);
-
-        for (let i = 0; i < files.length; i++) {
-          const file = files[i] as any;
-          console.log(`File ${i}:`, { name: file.name, path: file.path, type: file.type, size: file.size });
-
-          // On WebView2, file.path contains the absolute path (for both files AND folders)
-          if (file.path) {
-            paths.push(file.path);
-          } else if (file.name) {
-            // Fallback for browsers without path property
-            paths.push(file.name);
-          }
-        }
-      }
-
-      if (paths.length > 0) {
-        console.log("Processing paths:", paths);
-        addFiles(paths);
-      }
+      // File processing is handled by Wails OnFileDrop -> files-dropped event
+      // No need to extract file.path here (it's an Electron-only API)
     };
 
-    // Attach to document body for full coverage
     document.body.addEventListener("dragover", handleDragOver);
     document.body.addEventListener("dragleave", handleDragLeave);
     document.body.addEventListener("drop", handleDrop);
 
     return () => {
+      observer.disconnect();
       document.body.removeEventListener("dragover", handleDragOver);
       document.body.removeEventListener("dragleave", handleDragLeave);
       document.body.removeEventListener("drop", handleDrop);
     };
-  }, [addFiles]);
+  }, [isWailsReady]);
 
   // Keep dropzone for visual feedback only (noDrag=true means it won't intercept)
   const { getRootProps, getInputProps } = useDropzone({

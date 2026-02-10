@@ -1,6 +1,6 @@
 {
-    "version": "0.0.2",
-    "download_url_windows": "https://github.com/billytoe/mp4-optimizer/releases/download/v0.0.2/FastStartInspector_windows.zip",
-    "download_url_mac": "https://github.com/billytoe/mp4-optimizer/releases/download/v0.0.2/FastStartInspector_darwin_universal.zip",
-    "release_notes": "1. 自动更新功能\n2. 简化版本管理\n3. Windows 改用 zip 格式发布"
+  "version": "0.0.3",
+  "download_url_windows": "https://github.com/billytoe/mp4-optimizer/releases/download/v0.0.3/FastStartInspector_windows.zip",
+  "download_url_mac": "https://github.com/billytoe/mp4-optimizer/releases/download/v0.0.3/FastStartInspector_darwin_universal.zip",
+  "release_notes": "### 🐛 修复 (Fixed)\n- **修复 已知错误**:"
 }

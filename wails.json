@@ -11,5 +11,12 @@
   "author": {
     "name": "Antigravity",
     "email": "ai@example.com"
+  },
+  "info": {
+    "productName": "MP4 FastStart Inspector",
+    "productVersion": "0.0.3",
+    "fileVersion": "0.0.3",
+    "copyright": "Copyright© 2026",
+    "comments": "Built with Wails"
   }
 }
