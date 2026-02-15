@@ -90,3 +90,47 @@ func FindAtoms(rs io.ReadSeeker) ([]Atom, error) {
 
 	return atoms, nil
 }
+
+// ValidateFile checks if the MP4 file is complete and not truncated.
+// Returns true if the file appears to be complete, false if truncated.
+func ValidateFile(rs io.ReadSeeker) (bool, error) {
+	// Get file size first
+	fileSize, err := rs.Seek(0, io.SeekEnd)
+	if err != nil {
+		return false, err
+	}
+	if _, err := rs.Seek(0, io.SeekStart); err != nil {
+		return false, err
+	}
+
+	atoms, err := FindAtoms(rs)
+	if err != nil {
+		// If we got an error but found some atoms, check if it's a truncation
+		if len(atoms) > 0 {
+			return false, nil
+		}
+		return false, err
+	}
+
+	if len(atoms) == 0 {
+		return false, fmt.Errorf("no atoms found")
+	}
+
+	// Check the last atom
+	lastAtom := atoms[len(atoms)-1]
+	
+	// If last atom has size 0, it means "until end of file" - that's valid
+	if lastAtom.Size == 0 {
+		return true, nil
+	}
+
+	// Calculate where the last atom should end
+	lastAtomEnd := lastAtom.Offset + lastAtom.Size
+	
+	// The last atom should end at or before the file size
+	if lastAtomEnd > fileSize {
+		return false, nil
+	}
+
+	return true, nil
+}

@@ -12,21 +12,121 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
+// ProgressEvent represents the progress update event data
+type ProgressEvent struct {
+	Path     string  `json:"path"`
+	Progress float64 `json:"progress"`
+	Message  string  `json:"message"`
+}
+
 // App struct
 type App struct {
-	ctx     context.Context
-	version string
+	ctx              context.Context
+	version          string
+	optimizingCount  int
+	optimizingMu     sync.Mutex
+	shouldClose      bool
+	forceClose       bool
+	visitedFolders   map[string]bool
+	visitedFoldersMu sync.Mutex
 }
 
 // NewApp creates a new App application struct
 func NewApp(version string) *App {
 	return &App{
-		version: version,
+		version:        version,
+		visitedFolders: make(map[string]bool),
 	}
+}
+
+// startOptimizing increments the optimizing count
+func (a *App) startOptimizing() {
+	a.optimizingMu.Lock()
+	a.optimizingCount++
+	a.optimizingMu.Unlock()
+}
+
+// stopOptimizing decrements the optimizing count
+func (a *App) stopOptimizing() {
+	a.optimizingMu.Lock()
+	if a.optimizingCount > 0 {
+		a.optimizingCount--
+	}
+	a.optimizingMu.Unlock()
+}
+
+// isOurTempFile checks if a file is our temporary file
+// Our temp file pattern is: {name}_tmp_{random}.mp4
+func isOurTempFile(path string) bool {
+	name := filepath.Base(path)
+	if !strings.HasSuffix(name, ".mp4") {
+		return false
+	}
+	nameWithoutExt := strings.TrimSuffix(name, ".mp4")
+	parts := strings.Split(nameWithoutExt, "_tmp_")
+	return len(parts) == 2
+}
+
+// cleanupTempFilesInDir removes our temporary files from the given directory
+func (a *App) cleanupTempFilesInDir(dir string) {
+	logToFile(fmt.Sprintf("[Cleanup] Scanning for temp files in: %s", dir))
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		logToFile(fmt.Sprintf("[Cleanup] Failed to read dir %s: %v", dir, err))
+		return
+	}
+
+	cleanedCount := 0
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		fullPath := filepath.Join(dir, entry.Name())
+		if isOurTempFile(fullPath) {
+			logToFile(fmt.Sprintf("[Cleanup] Removing temp file: %s", fullPath))
+			if err := os.Remove(fullPath); err != nil {
+				logToFile(fmt.Sprintf("[Cleanup] Failed to remove %s: %v", fullPath, err))
+			} else {
+				cleanedCount++
+			}
+		}
+	}
+
+	if cleanedCount > 0 {
+		logToFile(fmt.Sprintf("[Cleanup] Cleaned %d temp files from %s", cleanedCount, dir))
+	}
+}
+
+// cleanupAllVisitedFolders removes temp files from all visited folders
+func (a *App) cleanupAllVisitedFolders() {
+	a.visitedFoldersMu.Lock()
+	defer a.visitedFoldersMu.Unlock()
+
+	logToFile("[Cleanup] Cleaning up all visited folders...")
+	for folder := range a.visitedFolders {
+		a.cleanupTempFilesInDir(folder)
+	}
+}
+
+// trackFolder adds a folder to the visited list and cleans it up
+func (a *App) trackFolder(dir string) {
+	absPath, err := filepath.Abs(dir)
+	if err != nil {
+		absPath = dir
+	}
+
+	a.visitedFoldersMu.Lock()
+	a.visitedFolders[absPath] = true
+	a.visitedFoldersMu.Unlock()
+
+	// Always cleanup, even if already visited
+	a.cleanupTempFilesInDir(absPath)
 }
 
 // startup is called when the app starts. The context is saved
@@ -48,9 +148,64 @@ func (a *App) CheckFile(path string) (bool, error) {
 	return analyzer.CheckFastStart(path)
 }
 
+// ValidateFile checks if the MP4 file is complete and not truncated.
+// Returns true if the file appears to be complete, false if truncated.
+func (a *App) ValidateFile(path string) (bool, error) {
+	return analyzer.ValidateFile(path)
+}
+
 // OptimizeFile performs the fast-start optimization on the file.
 func (a *App) OptimizeFile(path string) error {
-	return optimizer.Optimize(path)
+	a.startOptimizing()
+	defer a.stopOptimizing()
+
+	// Track the folder of this file
+	parentDir := filepath.Dir(path)
+	a.trackFolder(parentDir)
+
+	callback := func(progress float64, message string) {
+		event := ProgressEvent{
+			Path:     path,
+			Progress: progress,
+			Message:  message,
+		}
+		runtime.EventsEmit(a.ctx, "optimize-progress", event)
+	}
+
+	return optimizer.Optimize(path, callback)
+}
+
+// IsOptimizing returns whether there's an optimization in progress
+func (a *App) IsOptimizing() bool {
+	a.optimizingMu.Lock()
+	defer a.optimizingMu.Unlock()
+	return a.optimizingCount > 0
+}
+
+// RequestClose requests the app to close, will prompt user if optimizing
+func (a *App) RequestClose() bool {
+	if a.IsOptimizing() {
+		// Signal frontend to show confirmation dialog
+		runtime.EventsEmit(a.ctx, "request-close-confirm")
+		return false
+	}
+	a.shouldClose = true
+	runtime.Quit(a.ctx)
+	return true
+}
+
+// IsForceClosing returns whether the app is in the process of force closing
+func (a *App) IsForceClosing() bool {
+	return a.forceClose
+}
+
+// ForceClose forces the app to close immediately
+func (a *App) ForceClose() {
+	logToFile("[ForceClose] User requested force close - cleaning up temp files first...")
+	a.forceClose = true
+	a.cleanupAllVisitedFolders()
+	a.shouldClose = true
+	runtime.Quit(a.ctx)
 }
 
 // GetFileMetadata returns the metadata for the given file
@@ -88,6 +243,7 @@ func (a *App) SelectDirectory() (string, error) {
 func (a *App) ExpandPaths(paths []string) ([]string, error) {
 	var result []string
 	uniquePaths := make(map[string]bool)
+	foldersToTrack := make(map[string]bool)
 
 	logToFile(fmt.Sprintf("[ExpandPaths] Start processing %d paths: %v", len(paths), paths))
 
@@ -101,14 +257,21 @@ func (a *App) ExpandPaths(paths []string) ([]string, error) {
 
 		if info.IsDir() {
 			logToFile(fmt.Sprintf("[ExpandPaths] processing directory: %s", cleanPath))
+			// Track this folder
+			absDir, _ := filepath.Abs(cleanPath)
+			foldersToTrack[absDir] = true
+
 			// Walk directory
 			err := filepath.WalkDir(cleanPath, func(path string, d os.DirEntry, err error) error {
 				if err != nil {
 					logToFile(fmt.Sprintf("[ExpandPaths] Walk error at %s: %v", path, err))
 					return nil // Skip errors accessing files
 				}
-				if !d.IsDir() {
-					if isMP4(path) {
+				if d.IsDir() {
+					absSubDir, _ := filepath.Abs(path)
+					foldersToTrack[absSubDir] = true
+				} else {
+					if isMP4(path) && !isOurTempFile(path) {
 						absPath, err := filepath.Abs(path)
 						if err == nil {
 							if !uniquePaths[absPath] {
@@ -125,8 +288,12 @@ func (a *App) ExpandPaths(paths []string) ([]string, error) {
 				fmt.Printf("Error walking dir %s: %v\n", cleanPath, err)
 			}
 		} else {
-			// It's a file
-			if isMP4(cleanPath) {
+			// It's a file - track its parent folder
+			parentDir := filepath.Dir(cleanPath)
+			absParentDir, _ := filepath.Abs(parentDir)
+			foldersToTrack[absParentDir] = true
+
+			if isMP4(cleanPath) && !isOurTempFile(cleanPath) {
 				absPath, err := filepath.Abs(cleanPath)
 				if err == nil {
 					if !uniquePaths[absPath] {
@@ -135,10 +302,16 @@ func (a *App) ExpandPaths(paths []string) ([]string, error) {
 					}
 				}
 			} else {
-				logToFile(fmt.Sprintf("[ExpandPaths] Skipped non-MP4 file: %s", cleanPath))
+				logToFile(fmt.Sprintf("[ExpandPaths] Skipped non-MP4 or temp file: %s", cleanPath))
 			}
 		}
 	}
+
+	// Cleanup all tracked folders
+	for folder := range foldersToTrack {
+		a.trackFolder(folder)
+	}
+
 	logToFile(fmt.Sprintf("[ExpandPaths] Finished. Found %d MP4 files.", len(result)))
 	return result, nil
 }

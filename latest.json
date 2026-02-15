@@ -1,6 +1,6 @@
 {
-  "version": "0.0.3",
+  "version": "0.0.4",
   "download_url_windows": "https://github.com/billytoe/mp4-optimizer/releases/download/v0.0.3/FastStartInspector_windows.zip",
   "download_url_mac": "https://github.com/billytoe/mp4-optimizer/releases/download/v0.0.3/FastStartInspector_darwin_universal.zip",
-  "release_notes": "### 🐛 修复 (Fixed)\n- **修复 已知错误**:"
+  "release_notes": "新增文件完整性检测、优化进度显示、串行转换、临时文件管理等功能。"
 }

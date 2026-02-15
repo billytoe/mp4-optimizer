@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useDropzone } from "react-dropzone";
-import { FileItem, FileStatus, FileMetadata } from "../types";
+import { FileItem, FileStatus, FileMetadata, ProgressEvent } from "../types";
 
 type UpdateResult = {
   available: boolean;
@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Progress } from "@/components/ui/progress";
 // import { cn } from "@/lib/utils"; // Not used currently
 import { Loader2, CheckCircle2, XCircle, FileVideo, Plus, Zap, Trash2, Play, X, FolderPlus, Moon, Sun, Download, RefreshCw } from "lucide-react";
 
@@ -67,6 +68,9 @@ export default function Home() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateReady, setUpdateReady] = useState(false);
   const [wailsConnected, setWailsConnected] = useState(false);
+  const [isOptimizing, setIsOptimizing] = useState(false);
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+  const [isCleaningUp, setIsCleaningUp] = useState(false);
 
   useEffect(() => {
     // Check for updates on mount
@@ -74,6 +78,8 @@ export default function Home() {
       checkForUpdates();
     }
   }, []); // Run once on mount
+
+  // Remove browser beforeunload - let Go handle it
 
   const checkForUpdates = async () => {
     // Default to raw github url
@@ -151,6 +157,30 @@ export default function Home() {
           if (paths && paths.length > 0) {
             addFiles(paths);
           }
+        });
+
+        // 2. Listen for optimization progress events
+        runtime.EventsOff("optimize-progress");
+        runtime.EventsOn("optimize-progress", (event: ProgressEvent) => {
+          console.log("Event: optimize-progress received", event);
+          setFiles((prev) =>
+            prev.map((f) =>
+              f.path === event.path
+                ? {
+                    ...f,
+                    progress: event.progress,
+                    progressMessage: event.message,
+                  }
+                : f
+            )
+          );
+        });
+
+        // 3. Listen for close confirmation requests
+        runtime.EventsOff("request-close-confirm");
+        runtime.EventsOn("request-close-confirm", () => {
+          console.log("Event: request-close-confirm received");
+          setShowCloseConfirm(true);
         });
 
         // 2. Also register Wails JS OnFileDrop as additional receiver
@@ -276,6 +306,21 @@ export default function Home() {
     }
 
     try {
+      // First validate file completeness
+      let isTruncated = false;
+      try {
+        const isValid = await app.ValidateFile(path);
+        isTruncated = !isValid;
+      } catch (validateErr) {
+        console.warn("File validation failed, continuing anyway:", validateErr);
+      }
+
+      // Update truncated status first
+      setFiles((prev) =>
+        prev.map((f) => (f.path === path ? { ...f, isTruncated } : f))
+      );
+
+      // Then check optimization status
       const isOptimized = await app.CheckFile(path);
       updateFileStatus(path, isOptimized ? "optimized" : "unoptimized");
     } catch (e: any) {
@@ -321,11 +366,22 @@ export default function Home() {
       await new Promise(resolve => setTimeout(resolve, 500));
     }
 
-    updateFileStatus(path, "scanning"); // use scanning spinner
+    updateFileStatus(path, "optimizing");
+    setFiles((prev) =>
+      prev.map((f) =>
+        f.path === path ? { ...f, progress: 0, progressMessage: "准备中..." } : f
+      )
+    );
+
     const app = getWailsApp();
     if (!app) {
       setTimeout(() => {
         updateFileStatus(path, "optimized");
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.path === path ? { ...f, progress: 100, progressMessage: "完成！" } : f
+          )
+        );
       }, 1000);
       return;
     }
@@ -335,6 +391,12 @@ export default function Home() {
       updateFileStatus(path, "optimized");
     } catch (e: any) {
       updateFileStatus(path, "error", e.toString());
+    } finally {
+      setFiles((prev) =>
+        prev.map((f) =>
+          f.path === path ? { ...f, progress: undefined, progressMessage: undefined } : f
+        )
+      );
     }
   };
 
@@ -370,13 +432,16 @@ export default function Home() {
 
   const handleOptimizeAll = async () => {
     const unoptimizedFiles = files.filter(f => f.status === 'unoptimized');
-    if (unoptimizedFiles.length === 0) return;
+    if (unoptimizedFiles.length === 0 || isOptimizing) return;
 
-    // Concurrently optimize? Or sequential?
-    // Sequential is safer for disk I/O, concurrent is faster.
-    // Go backend handles rename, so concurrent is okayish but might saturate I/O.
-    // Let's do parallel, it's user friendly.
-    unoptimizedFiles.forEach(f => optimizeFile(f.path));
+    setIsOptimizing(true);
+    try {
+      for (const file of unoptimizedFiles) {
+        await optimizeFile(file.path);
+      }
+    } finally {
+      setIsOptimizing(false);
+    }
   }
 
   // Count unoptimized files
@@ -533,7 +598,7 @@ export default function Home() {
           <Badge variant="outline" className="h-10 px-4 text-muted-foreground border-border bg-muted/50">
             共 {files.length} 个文件
           </Badge>
-          <Button variant="outline" onClick={() => setFiles([])} disabled={files.length === 0}>
+          <Button variant="outline" onClick={() => setFiles([])} disabled={files.length === 0 || isOptimizing}>
             <Trash2 className="w-4 h-4 mr-2" />
             清空
           </Button>
@@ -541,19 +606,19 @@ export default function Home() {
           {/* Batch Optimization Button */}
           <Button
             onClick={handleOptimizeAll}
-            disabled={unoptimizedCount === 0}
-            className={unoptimizedCount > 0 ? "bg-emerald-600 hover:bg-emerald-500 text-white" : "bg-slate-800 text-slate-500"}
+            disabled={unoptimizedCount === 0 || isOptimizing}
+            className={unoptimizedCount > 0 && !isOptimizing ? "bg-emerald-600 hover:bg-emerald-500 text-white" : "bg-slate-800 text-slate-500"}
           >
             <Zap className="w-4 h-4 mr-2" />
             全部优化 ({unoptimizedCount})
           </Button>
 
-          <Button onClick={handleOpenFiles} size="lg" className="bg-blue-600 hover:bg-blue-500 text-white">
+          <Button onClick={handleOpenFiles} size="lg" className="bg-blue-600 hover:bg-blue-500 text-white" disabled={isOptimizing}>
             <Plus className="w-4 h-4 mr-2" />
             添加文件
           </Button>
 
-          <Button onClick={handleOpenDirectory} size="lg" className="bg-blue-700 hover:bg-blue-600 text-white">
+          <Button onClick={handleOpenDirectory} size="lg" className="bg-blue-700 hover:bg-blue-600 text-white" disabled={isOptimizing}>
             <FolderPlus className="w-4 h-4 mr-2" />
             添加文件夹
           </Button>
@@ -589,7 +654,14 @@ export default function Home() {
                     <TableCell className="text-muted-foreground font-mono">{index + 1}</TableCell>
                     <TableCell className="font-medium text-foreground truncate max-w-[250px]" title={file.path}>
                       <div className="flex flex-col">
-                        <span>{file.name}</span>
+                        <div className="flex items-center gap-2">
+                          <span>{file.name}</span>
+                          {file.isTruncated && (
+                            <Badge variant="destructive" className="h-5 px-1.5 text-[10px]">
+                              文件不完整
+                            </Badge>
+                          )}
+                        </div>
                         <span className="text-xs text-muted-foreground truncate">{file.path}</span>
                         {file.metadata?.modified && (
                           <span className="text-[10px] text-muted-foreground">
@@ -619,7 +691,17 @@ export default function Home() {
                       )}
                     </TableCell>
                     <TableCell className="text-center">
-                      <StatusBadge status={file.status} message={file.message} />
+                      <div className="flex flex-col gap-2">
+                        <StatusBadge status={file.status} message={file.message} />
+                        {file.status === 'optimizing' && file.progress !== undefined && (
+                          <div className="w-full">
+                            <Progress value={file.progress} className="h-2" />
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {file.progressMessage || `${Math.round(file.progress)}%`}
+                            </p>
+                          </div>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
@@ -641,6 +723,7 @@ export default function Home() {
                               e.stopPropagation();
                               optimizeFile(file.path);
                             }}
+                            disabled={isOptimizing}
                           >
                             <Zap className="w-3 h-3 mr-1" />
                             优化
@@ -668,16 +751,6 @@ export default function Home() {
                 </Button>
               </div>
               <div className="flex-1 bg-black flex items-center justify-center overflow-hidden relative">
-                {/* 
-                    Use /video/ prefix which Go backend handles.
-                    We need strictly URL encoded path segments.
-                    But Go's http.FileSystem usually expects straight paths?
-                    Browser handles URL encoding.
-                    If path is "C:\foo bar.mp4", URL should be "/video/C:/foo%20bar.mp4" (roughly).
-                    Wait, windows paths in URL? 
-                    Wails + AssetServer usually handles local paths if we map it right.
-                    Let's try direct path first. 
-                 */}
                 <video
                   controls
                   autoPlay
@@ -696,6 +769,55 @@ export default function Home() {
         )
       }
 
+      {/* Close Confirmation Modal */}
+      {showCloseConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="bg-background border border-border rounded-lg shadow-2xl max-w-md w-full p-6">
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-amber-500/10 rounded-full">
+                  <XCircle className="w-6 h-6 text-amber-500" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-foreground">正在优化中</h3>
+                  <p className="text-sm text-muted-foreground">有视频文件正在优化中，关闭程序可能会导致文件损坏。</p>
+                </div>
+              </div>
+              {isCleaningUp && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  正在清理临时文件...
+                </div>
+              )}
+              <div className="flex gap-3 justify-end mt-4">
+                <Button
+                  variant="secondary"
+                  onClick={() => setShowCloseConfirm(false)}
+                  disabled={isCleaningUp}
+                >
+                  继续优化
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={async () => {
+                    setIsCleaningUp(true);
+                    const app = getWailsApp();
+                    if (app) {
+                      await app.ForceClose();
+                    } else {
+                      window.close();
+                    }
+                  }}
+                  disabled={isCleaningUp}
+                >
+                  {isCleaningUp ? '清理中...' : '强制关闭'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <footer className="mt-4 flex items-center justify-center text-muted-foreground text-xs border-t border-border/50 pt-4 relative">
         <div className="flex items-center gap-2">
           {/* Connection Status Dot */}
@@ -713,6 +835,7 @@ export default function Home() {
 function StatusBadge({ status, message }: { status: FileStatus, message?: string }) {
   if (status === 'pending') return <Badge variant="outline" className="text-muted-foreground">等待中</Badge>;
   if (status === 'scanning') return <Badge variant="secondary" className="bg-blue-500/10 text-blue-500 dark:text-blue-400"><Loader2 className="w-3 h-3 mr-1 animate-spin" /> 检测中</Badge>;
+  if (status === 'optimizing') return <Badge variant="secondary" className="bg-amber-500/10 text-amber-500 dark:text-amber-400"><Loader2 className="w-3 h-3 mr-1 animate-spin" /> 优化中</Badge>;
   if (status === 'optimized') return <Badge variant="default" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 border"><CheckCircle2 className="w-3 h-3 mr-1" /> 已优化</Badge>;
   if (status === 'unoptimized') return <Badge variant="destructive" className="bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20 border"><XCircle className="w-3 h-3 mr-1" /> 未优化</Badge>;
   if (status === 'error') return <Badge variant="destructive" title={message}>错误</Badge>;

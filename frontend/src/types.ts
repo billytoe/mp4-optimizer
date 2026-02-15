@@ -1,4 +1,4 @@
-export type FileStatus = 'pending' | 'scanning' | 'optimized' | 'unoptimized' | 'error';
+export type FileStatus = 'pending' | 'scanning' | 'optimizing' | 'optimized' | 'unoptimized' | 'error';
 
 export interface FileMetadata {
     size: number;
@@ -17,5 +17,13 @@ export interface FileItem {
     status: FileStatus;
     message?: string;
     progress?: number;
+    progressMessage?: string;
     metadata?: FileMetadata;
+    isTruncated?: boolean; // 文件是否被截断/不完整
+}
+
+export interface ProgressEvent {
+    path: string;
+    progress: number;
+    message: string;
 }

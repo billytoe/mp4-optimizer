@@ -14,6 +14,10 @@ export function ExpandPaths(arg1) {
   return window['go']['bridge']['App']['ExpandPaths'](arg1);
 }
 
+export function ForceClose() {
+  return window['go']['bridge']['App']['ForceClose']();
+}
+
 export function GetAppVersion() {
   return window['go']['bridge']['App']['GetAppVersion']();
 }
@@ -26,8 +30,20 @@ export function InstallUpdate(arg1) {
   return window['go']['bridge']['App']['InstallUpdate'](arg1);
 }
 
+export function IsForceClosing() {
+  return window['go']['bridge']['App']['IsForceClosing']();
+}
+
+export function IsOptimizing() {
+  return window['go']['bridge']['App']['IsOptimizing']();
+}
+
 export function OptimizeFile(arg1) {
   return window['go']['bridge']['App']['OptimizeFile'](arg1);
+}
+
+export function RequestClose() {
+  return window['go']['bridge']['App']['RequestClose']();
 }
 
 export function SelectDirectory() {
@@ -36,4 +52,8 @@ export function SelectDirectory() {
 
 export function SelectFiles() {
   return window['go']['bridge']['App']['SelectFiles']();
+}
+
+export function ValidateFile(arg1) {
+  return window['go']['bridge']['App']['ValidateFile'](arg1);
 }

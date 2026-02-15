@@ -9,14 +9,24 @@ export function CheckForUpdates(arg1:string):Promise<updater.CheckResult>;
 
 export function ExpandPaths(arg1:Array<string>):Promise<Array<string>>;
 
+export function ForceClose():Promise<void>;
+
 export function GetAppVersion():Promise<string>;
 
 export function GetFileMetadata(arg1:string):Promise<analyzer.Metadata>;
 
 export function InstallUpdate(arg1:string):Promise<void>;
 
+export function IsForceClosing():Promise<boolean>;
+
+export function IsOptimizing():Promise<boolean>;
+
 export function OptimizeFile(arg1:string):Promise<void>;
+
+export function RequestClose():Promise<boolean>;
 
 export function SelectDirectory():Promise<string>;
 
 export function SelectFiles():Promise<Array<string>>;
+
+export function ValidateFile(arg1:string):Promise<boolean>;

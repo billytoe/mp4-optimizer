@@ -46,3 +46,15 @@ func CheckFastStart(path string) (bool, error) {
 
 	return moovIndex < mdatIndex, nil
 }
+
+// ValidateFile checks if the MP4 file at path is complete and not truncated.
+// Returns true if the file appears to be complete, false if truncated.
+func ValidateFile(path string) (bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return false, fmt.Errorf("open file: %w", err)
+	}
+	defer f.Close()
+
+	return atomic.ValidateFile(f)
+}
