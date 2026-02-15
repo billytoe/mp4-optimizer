@@ -4,6 +4,7 @@
 
 ![Screenshot](screenshot.png)
 
+![Screenshot](screenshot_down.png)
 ## ✨ 主要功能
 
 *   **智能检测**：自动分析 MP4 文件的 `moov` 原子位置，直观显示无需优化的状态（绿色）或需要优化（红色）。
