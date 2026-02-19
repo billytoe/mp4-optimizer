@@ -161,9 +161,12 @@ func Optimize(path string, callback ...ProgressCallback) error {
 	}
 	tmpFile.Close()
 
+	// 8. Close input file BEFORE rename (Windows locks open files, preventing rename)
+	in.Close()
+
 	reportProgress(95, "完成...")
 
-	// 8. Atomically replace original file with temp file
+	// 9. Atomically replace original file with temp file
 	if err := os.Rename(tmpPath, path); err != nil {
 		return fmt.Errorf("failed to replace file: %w", err)
 	}
